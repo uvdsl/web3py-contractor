@@ -1,40 +1,34 @@
 import argparse
+from getpass import getpass
 from web3 import Web3, HTTPProvider, WebsocketProvider
 from solcx import compile_source, install_solc, set_solc_version, get_installed_solc_versions
 from vyper import compile_code
 from datetime import datetime
 import json
+import sys
 
 
 def log(message):
     print('==', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), '==', message)
 
 
-DEFAULT_CONNECTION = 'ws://localhost:8546'
-provider = WebsocketProvider(DEFAULT_CONNECTION) # default
-
 parser = argparse.ArgumentParser()
-parser.add_argument("-e", "--endpoint", help="Geth connection endpoint, default: {}".format(DEFAULT_CONNECTION))
-parser.add_argument("contract", help="Contract file in ./data/src, e.g. myContract.sol or myContract.vy. If you don't provide onyle the name without {.type} the contractor will assume abi and bin files to be in place.")
+p_group_deploy = parser.add_argument_group('deployment arguments')
+p_group_deploy.add_argument("-e", "--endpoint", help="Geth connection endpoint. If you don't provide an endpoint, deployment will be skipped.")
+p_group_deploy.add_argument("-a", "--account", help="Account to unlock in 0x format. If you don't provide an account, available accounts will be suggested.")
+p_group_deploy.add_argument("-p", "--password", help="The password to unlock the given account. If you don't provide a password, you will be prompted.")
+parser.add_argument("contract", help="Contract file in ./data/src, e.g. myContract.sol or myContract.vy, to be compiled. If the filetype is not .vy or .sol, compilation will be skipped")
 args = parser.parse_args()
-
-if args.endpoint:
-    if args.endpoint.startswith('http://'):
-        provider = HTTPProvider(args.endpoint)
-    elif args.endpoint.startswith('ws://'):
-        provider = WebsocketProvider(args.endpoint)
-    else:
-        log("What is this endpoint? Falling back to default ... ")
-log(provider)
-
-contract_name = args.contract.partition('.')[0]
-contract_lang = args.contract.partition('.')[2]
 
 ########################
 ### COMPILE CONTRACT ###
 ########################
 
-if contract_lang == '':
+contract_name = args.contract.partition('.')[0]
+contract_lang = args.contract.partition('.')[2]
+
+if not (contract_lang == 'vy' or contract_lang == 'sol'):
+    log('Did not recognize Vyper or Solidity file!')
     log('Skipping compilation.')
 else: 
     # read in
@@ -76,6 +70,26 @@ else:
 ### DEPLOY CONTRACT ###
 #######################
 
+if not args.endpoint:
+    log('Skipping deployment.')
+    sys.exit(0)
+
+if args.endpoint.startswith('http://'):
+    provider = HTTPProvider(args.endpoint)
+elif args.endpoint.startswith('ws://'):
+    provider = WebsocketProvider(args.endpoint)
+
+log(provider)
+
+
+# Read abi and bin
+with open('./data/abi/{}.abi'.format(contract_name), 'r') as file_ctrct_abi:
+    ctrct_abi = json.load(file_ctrct_abi)
+with open('./data/bin/{}.bin'.format(contract_name), 'r') as file_ctrct_bin:
+    ctrct_byte = file_ctrct_bin.read()
+    if not ctrct_byte.startswith('0x'):
+        ctrct_byte = '0x' + ctrct_byte
+
 try:
     log('Connecting to Geth ...')
     w3 = Web3(provider)
@@ -83,24 +97,24 @@ try:
 except:
     log('Did not reach Geth at ...')
 else:
-    
-    # Read abi and bin
-    with open('./data/abi/{}.abi'.format(contract_name), 'r') as file_ctrct_abi:
-        ctrct_abi = json.load(file_ctrct_abi)
-    with open('./data/bin/{}.bin'.format(contract_name), 'r') as file_ctrct_bin:
-        ctrct_byte = file_ctrct_bin.read()
-        if not ctrct_byte.startswith('0x'):
-            ctrct_byte = '0x' + ctrct_byte
     # Create contract
     ctrct = w3.eth.contract(abi=ctrct_abi, bytecode=ctrct_byte)
 
-    # Display account to use
-    w3.eth.defaultAccount = w3.eth.accounts[0]
+    # Wallet
+    if not args.account:
+        log('Available Accounts:')
+        for index, account in enumerate(w3.eth.accounts):
+            print('\t[{}] {}'.format(index, account))
+        idx = int(input('== ' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' == Account Index to use: '))
+        args.account = w3.eth.accounts[idx]
+    w3.eth.defaultAccount = args.account
     log('Account: ' + w3.eth.defaultAccount)
-    # Read in passphrase
-    passphrase = input('== ' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' == Passphrase: ')
-    log('Unlock: ' + str(w3.geth.personal.unlockAccount(w3.eth.defaultAccount, passphrase)))
-    
+    # Password
+    if not args.password:
+        # Read in password
+        args.password = getpass('== ' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' == Passphrase: ')
+    log('Unlock: {}'.format(w3.geth.personal.unlockAccount(w3.eth.defaultAccount, args.password)))
+            
     # Submit the transaction that deploys the contract
     tx_hash = ctrct.constructor().transact()
     # Wait for the transaction to be mined, and get the transaction receipt
