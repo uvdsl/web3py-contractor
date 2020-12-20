@@ -10,7 +10,7 @@ pip install -r requirements.txt
 
 ## Usage
 ```
-usage: contractor.py [-h] [-e ENDPOINT] [-a ACCOUNT] [-p PASSWORD] contract
+usage: contractor.py [-h] [-e ENDPOINT] [-cargs CONSTRUCTOR_ARGS] [-a ACCOUNT] [-p PASSWORD] contract
 
 positional arguments:
   contract              Contract file in ./data/src/, e.g. myContract.sol or
