@@ -95,7 +95,7 @@ try:
     w3 = Web3(provider)
     log('Connected at block: {}'.format(w3.eth.blockNumber))
 except:
-    log('Did not reach Geth at ...')
+    log('Did not reach Geth ...')
 else:
     # Create contract
     ctrct = w3.eth.contract(abi=ctrct_abi, bytecode=ctrct_byte)
