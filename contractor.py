@@ -15,17 +15,18 @@ def log(message):
 parser = argparse.ArgumentParser()
 p_group_deploy = parser.add_argument_group('deployment arguments')
 p_group_deploy.add_argument("-e", "--endpoint", help="Geth connection endpoint. If you don't provide an endpoint, deployment will be skipped.")
+p_group_deploy.add_argument("-cargs", "--constructor_args", help="Arguments of the contract constructor in array syntax, i.e. [args1,args2,...].If the contract constructor requires arguments you didn't provide, the deployment will fail.")
 p_group_deploy.add_argument("-a", "--account", help="Account to unlock in 0x format. If you don't provide an account, available accounts will be suggested.")
 p_group_deploy.add_argument("-p", "--password", help="The password to unlock the given account. If you don't provide a password, you will be prompted.")
-parser.add_argument("contract", help="Contract file in ./data/src, e.g. myContract.sol or myContract.vy, to be compiled. If the filetype is not .vy or .sol, compilation will be skipped")
+parser.add_argument("contract", help="Contract file in ./data/src/, e.g. myContract.sol or myContract.vy, to be compiled. If the filetype is not .vy or .sol, compilation will be skipped.")
 args = parser.parse_args()
 
 ########################
 ### COMPILE CONTRACT ###
 ########################
 
-contract_name = args.contract.partition('.')[0]
-contract_lang = args.contract.partition('.')[2]
+contract_name = args.contract.split('.')[0]
+contract_lang = args.contract.split('.')[1]
 
 if not (contract_lang == 'vy' or contract_lang == 'sol'):
     log('Did not recognize Vyper or Solidity file!')
@@ -74,10 +75,17 @@ if not args.endpoint:
     log('Skipping deployment.')
     sys.exit(0)
 
+if args.constructor_args and not (args.constructor_args.startswith('[') and args.constructor_args.endswith(']')):
+    log('ERROR == Syntax error in constructor args. Should be array syntax, i.e. [args1,args2,...]')
+    sys.exit(1)
+
 if args.endpoint.startswith('http://'):
     provider = HTTPProvider(args.endpoint)
 elif args.endpoint.startswith('ws://'):
     provider = WebsocketProvider(args.endpoint)
+else: 
+    log('ERROR == Unknown provider protocol. Only know HTTP or WS.')
+    sys.exit(1)
 
 log(provider)
 
@@ -115,8 +123,17 @@ else:
         args.password = getpass('== ' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ' == Passphrase: ')
     log('Unlock: {}'.format(w3.geth.personal.unlockAccount(w3.eth.defaultAccount, args.password)))
             
+    # Parse constructor args
+    if not args.constructor_args:
+        log('No constructor arguments provided.')
+        tx_deployment = ctrct.constructor()
+    else:
+        c_arguments = args.constructor_args[1:-1].split(',')
+        log('Prepared constructor args: {}'.format(c_arguments))
+        tx_deployment = ctrct.constructor(*c_arguments)
+
     # Submit the transaction that deploys the contract
-    tx_hash = ctrct.constructor().transact()
+    tx_hash = tx_deployment.transact()
     # Wait for the transaction to be mined, and get the transaction receipt
     tx_receipt = w3.eth.waitForTransactionReceipt(tx_hash)
     # Instantiate contract
