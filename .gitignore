@@ -40,6 +40,10 @@ npm-debug.log
 yarn-error.log
 testem.log
 /typings
+/data/abi/*
+/data/bin/*
+/data/src/*
+/data/contracts.txt
 
 # System Files
 .DS_Store
